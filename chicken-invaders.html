@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Chicken Invaders – Happy Birthday Bashair!</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: linear-gradient(to bottom, #0f0c29, #302b63, #24243e);
+      font-family: 'Comic Sans MS', sans-serif;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background: transparent;
+    }
+    #scoreBoard {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 1.2rem;
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 8px;
+      color: white;
+    }
+    #birthdayBanner {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 1.4rem;
+      background: rgba(255,105,180,0.3);
+      padding: 10px 15px;
+      border-radius: 12px;
+      color: #fff;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.05); opacity: 0.8; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div id="scoreBoard">Score: 0 | Level: 1</div>
+  <div id="birthdayBanner">🎂 Happy Birthday Bashair Khan 💖</div>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let spaceship = {
+      x: canvas.width / 2 - 25,
+      y: canvas.height - 60,
+      width: 50,
+      height: 50,
+      speed: 5
+    };
+
+    let bullets = [];
+    let chickens = [];
+    let hearts = [];
+    let score = 0;
+    let level = 1;
+    let gameSpeed = 1;
+    let keys = {};
+    let fireCooldown = 0;
+    let levelMessageTimer = 0;
+
+    let chickenImg = new Image();
+    chickenImg.src = "https://i.ibb.co/GsYbp7V/chicken.png";
+
+    function spawnChickens(rows, cols) {
+      chickens = [];
+      for (let i = 0; i < rows; i++) {
+        for (let j = 0; j < cols; j++) {
+          chickens.push({
+            x: 60 + j * 60,
+            y: 60 + i * 60,
+            width: 40,
+            height: 40,
+            alive: true,
+            direction: 1,
+          });
+        }
+      }
+    }
+
+    function drawSpaceship() {
+      // Rainbow trail
+      let colors = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'];
+      for (let i = 0; i < colors.length; i++) {
+        ctx.fillStyle = colors[i];
+        ctx.fillRect(spaceship.x + 22, spaceship.y + 45 + i * 2, 6, 2);
+      }
+
+      // Ship
+      ctx.fillStyle = "#00f";
+      ctx.beginPath();
+      ctx.moveTo(spaceship.x + 25, spaceship.y);
+      ctx.lineTo(spaceship.x, spaceship.y + 50);
+      ctx.lineTo(spaceship.x + 50, spaceship.y + 50);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawBullets() {
+      ctx.fillStyle = "yellow";
+      bullets.forEach((b, i) => {
+        ctx.fillRect(b.x, b.y, 5, 10);
+        b.y -= 8;
+        if (b.y < 0) bullets.splice(i, 1);
+      });
+    }
+
+    function drawChickens() {
+      chickens.forEach(chick => {
+        if (chick.alive) {
+          ctx.drawImage(chickenImg, chick.x, chick.y, chick.width, chick.height);
+          chick.x += 1.5 * gameSpeed * chick.direction;
+        }
+      });
+
+      const hitEdge = chickens.some(c => c.x + c.width > canvas.width || c.x < 0);
+      if (hitEdge) {
+        chickens.forEach(c => {
+          c.y += 10;
+          c.direction *= -1;
+        });
+      }
+    }
+
+    function drawHearts() {
+      ctx.font = "20px Arial";
+      hearts.forEach((h, i) => {
+        ctx.fillStyle = "pink";
+        ctx.fillText("💖", h.x, h.y);
+        h.y -= 1;
+        h.opacity -= 0.005;
+        if (h.opacity <= 0) hearts.splice(i, 1);
+      });
+    }
+
+    function detectCollision() {
+      bullets.forEach((b, bi) => {
+        chickens.forEach((c, ci) => {
+          if (
+            c.alive &&
+            b.x < c.x + c.width &&
+            b.x + 5 > c.x &&
+            b.y < c.y + c.height &&
+            b.y + 10 > c.y
+          ) {
+            chickens[ci].alive = false;
+            bullets.splice(bi, 1);
+            score += 10;
+            document.getElementById("scoreBoard").innerText = `Score: ${score} | Level: ${level}`;
+          }
+        });
+      });
+    }
+
+    function nextLevel() {
+      if (chickens.every(c => !c.alive)) {
+        level++;
+        gameSpeed += 0.2;
+        spawnChickens(3 + level, 5 + level);
+        levelMessageTimer = 100;
+      }
+    }
+
+    function drawLevelMessage() {
+      if (levelMessageTimer > 0) {
+        ctx.fillStyle = "white";
+        ctx.font = "28px Comic Sans MS";
+        ctx.fillText(`🎉 Level ${level} – Bashair would be proud! 🎉`, 150, 300);
+        levelMessageTimer--;
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawSpaceship();
+      drawBullets();
+      drawChickens();
+      drawHearts();
+      drawLevelMessage();
+      detectCollision();
+      nextLevel();
+
+      fireCooldown--;
+      requestAnimationFrame(draw);
+    }
+
+    function gameLoop() {
+      if (keys['ArrowLeft'] && spaceship.x > 0) spaceship.x -= spaceship.speed;
+      if (keys['ArrowRight'] && spaceship.x + spaceship.width < canvas.width) spaceship.x += spaceship.speed;
+      if (keys[' '] && fireCooldown <= 0) {
+        bullets.push({ x: spaceship.x + 22, y: spaceship.y });
+        fireCooldown = 15;
+      }
+
+      // Random floating hearts
+      if (Math.random() < 0.02) {
+        hearts.push({ x: Math.random() * canvas.width, y: canvas.height, opacity: 1 });
+      }
+
+      setTimeout(gameLoop, 20);
+    }
+
+    document.addEventListener('keydown', e => keys[e.key] = true);
+    document.addEventListener('keyup', e => keys[e.key] = false);
+
+    spawnChickens(3, 5);
+    draw();
+    gameLoop();
+
+    // Optional background music
+    // let music = new Audio("https://www.bensound.com/bensound-music/bensound-sunny.mp3");
+    // music.loop = true;
+    // music.volume = 0.3;
+    // music.play();
+  </script>
+</body>
+</html>

@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bubble Shooter Game</title>
+  <style>
+    body {
+      margin: 0; background: radial-gradient(ellipse at center, #000014 0%, #000000 100%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100vh; color: white; font-family: Arial, sans-serif;
+      overflow: hidden;
+    }
+    canvas {
+      background: #111122;
+      border-radius: 10px;
+      box-shadow: 0 0 20px #aaffff;
+      display: block;
+    }
+    #scoreboard {
+      margin-top: 10px; font-size: 1.2rem;
+    }
+    #lives {
+      margin-top: 5px; font-size: 1rem; color: #ff6699;
+    }
+    #startScreen {
+      position: absolute;
+      background: rgba(0,0,0,0.85);
+      color: white;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 25px;
+      border-radius: 12px;
+      text-align: center;
+      font-size: 1.2rem;
+      max-width: 320px;
+      box-shadow: 0 0 25px #ff66cc;
+      z-index: 10;
+    }
+    #startBtn {
+      margin-top: 15px;
+      padding: 8px 20px;
+      font-size: 1.1rem;
+      border: none;
+      border-radius: 8px;
+      background: #ff3399;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 0 10px #ff3399;
+    }
+    #startBtn:hover {
+      background: #ff66bb;
+    }
+  </style>
+</head>
+<body>
+
+<div id="startScreen">
+  <h2>Bubble Shooter Game</h2>
+  <p>Aim with mouse or arrow keys, shoot bubbles to pop them.</p>
+  <p>Pop any bubble you hit, don't let bubbles reach the bottom!</p>
+  <button id="startBtn">Start Game</button>
+</div>
+
+<canvas id="gameCanvas" width="480" height="600"></canvas>
+<div id="scoreboard">Score: 0</div>
+<div id="lives">Lives: 3</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // Game settings
+  const bubbleRadius = 20;
+  const rows = 8;
+  const cols = 12;
+  const colors = ['#FF4C4C', '#FFAA00', '#33CCFF', '#FF66CC', '#99FF66', '#FF9933'];
+  let grid = [];
+  let score = 0;
+  let lives = 3;
+  let level = 1;
+  let shooting = false;
+  let shooterBubble = null;
+  let shootVelX = 0;
+  let shootVelY = 0;
+  let paddleX = canvas.width / 2;
+  const paddleWidth = 80;
+  const paddleHeight = 10;
+  let keys = {};
+
+  // Sounds
+  const popSound = new Audio('https://freesound.org/data/previews/331/331912_3248244-lq.mp3');
+  const shootSound = new Audio('https://freesound.org/data/previews/256/256113_3263906-lq.mp3');
+
+  // Initialize grid with random bubbles
+  function setupGrid(level) {
+    grid = [];
+    for (let r = 0; r < rows; r++) {
+      grid[r] = [];
+      for (let c = 0; c < cols; c++) {
+        if (r < level + 3) {
+          const color = colors[Math.floor(Math.random() * colors.length)];
+          grid[r][c] = color;
+        } else {
+          grid[r][c] = null;
+        }
+      }
+    }
+  }
+
+  // Draw bubbles grid
+  function drawGrid() {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c]) {
+          const x = c * bubbleRadius * 2 + bubbleRadius;
+          const y = r * bubbleRadius * 2 + bubbleRadius;
+          drawBubble(x, y, bubbleRadius, grid[r][c]);
+        }
+      }
+    }
+  }
+
+  // Draw single bubble
+  function drawBubble(x, y, radius, color) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    ctx.fill();
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // Draw shooter bubble and paddle
+  function drawShooter() {
+    // Paddle
+    ctx.fillStyle = '#FF66AA';
+    ctx.shadowColor = '#FF66AA';
+    ctx.shadowBlur = 10;
+    ctx.fillRect(paddleX - paddleWidth/2, canvas.height - 30, paddleWidth, paddleHeight);
+    ctx.shadowBlur = 0;
+
+    if (shooterBubble) {
+      drawBubble(shooterBubble.x, shooterBubble.y, bubbleRadius, shooterBubble.color);
+    }
+  }
+
+  // Create a new bubble for shooter
+  function createBubble() {
+    return {
+      x: paddleX,
+      y: canvas.height - 30 - bubbleRadius,
+      color: colors[Math.floor(Math.random() * colors.length)]
+    };
+  }
+
+  // Update scoreboard and lives display
+  function updateScoreboard() {
+    document.getElementById('scoreboard').innerText = `Score: ${score}`;
+    document.getElementById('lives').innerText = `Lives: ${lives}`;
+  }
+
+  // Check collision with bubbles or ceiling
+  function checkCollision() {
+    // Collision with ceiling
+    if (shooterBubble.y - bubbleRadius <= 0) {
+      return {hit: false, ceiling: true, r: null, c: null};
+    }
+    // Collision with bubbles
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c]) {
+          const bubbleX = c * bubbleRadius * 2 + bubbleRadius;
+          const bubbleY = r * bubbleRadius * 2 + bubbleRadius;
+          const dx = bubbleX - shooterBubble.x;
+          const dy = bubbleY - shooterBubble.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist <= bubbleRadius * 2 - 2) {
+            return {hit: true, ceiling: false, r, c};
+          }
+        }
+      }
+    }
+    return {hit: false, ceiling: false, r: null, c: null};
+  }
+
+  // Move bubbles down every X seconds (increases difficulty)
+  function dropBubbles() {
+    for (let r = rows - 2; r >= 0; r--) {
+      for (let c = 0; c < cols; c++) {
+        grid[r + 1][c] = grid[r][c];
+      }
+    }
+    for (let c = 0; c < cols; c++) {
+      grid[0][c] = colors[Math.floor(Math.random() * colors.length)];
+    }
+  }
+
+  // Check if bubbles reached bottom row
+  function checkLoseCondition() {
+    for (let c = 0; c < cols; c++) {
+      if (grid[rows - 1][c]) return true;
+    }
+    return false;
+  }
+
+  // Particle explosion effect on bubble pop
+  const particles = [];
+  function spawnParticles(r, c, color) {
+    const cx = c * bubbleRadius * 2 + bubbleRadius;
+    const cy = r * bubbleRadius * 2 + bubbleRadius;
+    for (let i = 0; i < 15; i++) {
+      particles.push({
+        x: cx,
+        y: cy,
+        vx: (Math.random() - 0.5) * 5,
+        vy: (Math.random() - 0.5) * 5,
+        life: 30,
+        color
+      });
+    }
+  }
+
+  // Update and draw particles
+  function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.15; // gravity
+      p.life--;
+      if (p.life <= 0) {
+        particles.splice(i, 1);
+      } else {
+        ctx.beginPath();
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life / 30;
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  // Game loop
+  function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drawGrid();
+    drawShooter();
+    updateParticles();
+
+    if (shooting) {
+      shooterBubble.x += shootVelX;
+      shooterBubble.y += shootVelY;
+
+      // Bounce off side walls
+      if (shooterBubble.x - bubbleRadius <= 0 || shooterBubble.x + bubbleRadius >= canvas.width) {
+        shootVelX = -shootVelX;
+      }
+
+      // Check collision with bubbles or ceiling
+      const collision = checkCollision();
+      if (collision.ceiling) {
+        // Hit ceiling, reset shooter
+        shooting = false;
+        shooterBubble = createBubble();
+      } else if (collision.hit) {
+        // Pop the hit bubble immediately
+        const {r, c} = collision;
+        spawnParticles(r, c, grid[r][c]);
+        grid[r][c] = null;
+        score += 10;
+        updateScoreboard();
+        popSound.currentTime = 0;
+        popSound.play();
+
+        shooting = false;
+        shooterBubble = createBubble();
+
+        if (checkLoseCondition()) {
+          lives--;
+          updateScoreboard();
+          if (lives <= 0) {
+            alert(`Game Over! Your final score: ${score}. Refresh to play again.`);
+            resetGame();
+          } else {
+            alert(`Watch out! You lost a life. Lives left: ${lives}`);
+            setupGrid(level);
+          }
+        }
+      }
+    }
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  // Reset the game
+  function resetGame() {
+    score = 0;
+    lives = 3;
+    level = 1;
+    updateScoreboard();
+    setupGrid(level);
+    shooting = false;
+    shooterBubble = createBubble();
+  }
+
+  // Mouse and keyboard controls
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    paddleX = Math.min(Math.max(e.clientX - rect.left, paddleWidth / 2), canvas.width - paddleWidth / 2);
+    if (!shooting && shooterBubble) shooterBubble.x = paddleX;
+  });
+
+  window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+  });
+
+  window.addEventListener('keyup', e => {
+    keys[e.key] = false;
+  });
+
+  function handleKeys() {
+    if (!shooting) {
+      if (keys['ArrowLeft']) {
+        paddleX -= 6;
+        if (paddleX < paddleWidth / 2) paddleX = paddleWidth / 2;
+      }
+      if (keys['ArrowRight']) {
+        paddleX += 6;
+        if (paddleX > canvas.width - paddleWidth / 2) paddleX = canvas.width - paddleWidth / 2;
+      }
+      if (shooterBubble) shooterBubble.x = paddleX;
+    }
+  }
+
+  // Shoot bubble on space or click
+  function shoot() {
+    if (shooting) return; // prevent multiple shots
+    shooting = true;
+    shootSound.currentTime = 0;
+    shootSound.play();
+
+    // Calculate velocity vector for bubble shooting (straight up)
+    shootVelX = 0;
+    shootVelY = -8;
+  }
+
+  canvas.addEventListener('click', shoot);
+  window.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      shoot();
+    }
+  });
+
+  // Level progression timer - every 30 seconds bubbles drop down
+  setInterval(() => {
+    if (!shooting) {
+      dropBubbles();
+      if (checkLoseCondition()) {
+        lives--;
+        updateScoreboard();
+        if (lives <= 0) {
+          alert(`Game Over! Your final score: ${score}. Refresh to play again.`);
+          resetGame();
+        } else {
+          alert(`Watch out! You lost a life. Lives left: ${lives}`);
+          setupGrid(level);
+        }
+      }
+    }
+  }, 30000);
+
+  // Start screen logic
+  const startScreen = document.getElementById('startScreen');
+  const startBtn = document.getElementById('startBtn');
+  startBtn.addEventListener('click', () => {
+    startScreen.style.display = 'none';
+    resetGame();
+    gameLoop();
+  });
+
+  // Initial setup
+  paddleX = canvas.width / 2;
+  shooterBubble = createBubble();
+  updateScoreboard();
+})();
+</script>
+
+</body>
+</html>

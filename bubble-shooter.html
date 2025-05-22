@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bubble Shooter Game</title>
+<style>
+  /* CSS styles */
+  body {
+    margin: 0;
+    background: #222;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    user-select: none;
+  }
+  canvas {
+    background: #000022;
+    display: block;
+    margin: 20px auto;
+    border: 2px solid white;
+    border-radius: 10px;
+  }
+  #info {
+    margin: 10px auto;
+    font-size: 18px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Bubble Shooter Game</h1>
+<canvas id="gameCanvas" width="480" height="600"></canvas>
+<div id="info">
+  <span id="score">Score: 0</span> | 
+  <span id="lives">Lives: 3</span> | 
+  <span id="level">Level: 1</span>
+</div>
+
+<script>
+  // JavaScript Game Code Starts Here
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  const colors = ['red', 'green', 'blue', 'yellow', 'purple', 'orange'];
+  const bubbleRadius = 15;
+  const cols = 10;
+  const rows = 15;
+  const rowHeight = bubbleRadius * 2 * 0.87; // hex grid approx
+
+  let grid = [];
+  let paddleX = canvas.width / 2;
+  const paddleWidth = 100;
+  let aimingAngle = -Math.PI / 2; // straight up
+
+  let score = 0;
+  let lives = 3;
+  let level = 1;
+
+  let currentBubble = null;
+  let shooting = false;
+  let bubblePos = { x: 0, y: 0 };
+  let bubbleVel = { x: 0, y: 0 };
+  const shootSpeed = 10;
+
+  let keys = {};
+
+  // Initialize grid with some bubbles on top
+  function createGrid() {
+    let newGrid = [];
+    for (let r = 0; r < rows; r++) {
+      newGrid[r] = [];
+      for (let c = 0; c < cols; c++) {
+        if (r < 5) {
+          // top 5 rows filled randomly with colors 50% chance
+          newGrid[r][c] = Math.random() < 0.5 ? randomColor() : null;
+        } else {
+          newGrid[r][c] = null;
+        }
+      }
+    }
+    return newGrid;
+  }
+
+  function randomColor() {
+    return colors[Math.floor(Math.random() * colors.length)];
+  }
+
+  function drawGrid() {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        let color = grid[r][c];
+        if (color) {
+          const x = c * bubbleRadius * 2 + (r % 2 === 1 ? bubbleRadius : 0) + bubbleRadius;
+          const y = r * rowHeight + bubbleRadius;
+          drawBubble(x, y, color);
+        }
+      }
+    }
+  }
+
+  function drawBubble(x, y, color) {
+    ctx.beginPath();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    ctx.arc(x, y, bubbleRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  function drawPaddle() {
+    ctx.fillStyle = '#ccc';
+    ctx.fillRect(paddleX - paddleWidth / 2, canvas.height - 30, paddleWidth, 15);
+  }
+
+  function drawAimLine() {
+    const startX = paddleX;
+    const startY = canvas.height - 30;
+    const length = 100;
+    const endX = startX + Math.cos(aimingAngle) * length;
+    const endY = startY + Math.sin(aimingAngle) * length;
+
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+  }
+
+  function spawnBubble() {
+    currentBubble = randomColor();
+  }
+
+  function drawCurrentBubble() {
+    if (!currentBubble) return;
+    let x = shooting ? bubblePos.x : paddleX;
+    let y = shooting ? bubblePos.y : canvas.height - 30 - bubbleRadius;
+    drawBubble(x, y, currentBubble);
+  }
+
+  function moveBubble() {
+    if (!shooting) return;
+
+    bubblePos.x += bubbleVel.x;
+    bubblePos.y += bubbleVel.y;
+
+    // Bounce off walls
+    if (bubblePos.x < bubbleRadius) {
+      bubblePos.x = bubbleRadius;
+      bubbleVel.x = -bubbleVel.x;
+    } else if (bubblePos.x > canvas.width - bubbleRadius) {
+      bubblePos.x = canvas.width - bubbleRadius;
+      bubbleVel.x = -bubbleVel.x;
+    }
+
+    // Check collision with top or other bubbles
+    if (bubblePos.y < bubbleRadius) {
+      placeBubble();
+      return;
+    }
+
+    // Check collision with bubbles in grid
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c]) {
+          const x = c * bubbleRadius * 2 + (r % 2 === 1 ? bubbleRadius : 0) + bubbleRadius;
+          const y = r * rowHeight + bubbleRadius;
+          let dx = bubblePos.x - x;
+          let dy = bubblePos.y - y;
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < bubbleRadius * 2 - 2) { // slight overlap allowance
+            placeBubble();
+            return;
+          }
+        }
+      }
+    }
+
+    // If bubble falls below paddle line (miss)
+    if (bubblePos.y > canvas.height) {
+      loseLife();
+      shooting = false;
+      currentBubble = null;
+      spawnBubble();
+    }
+  }
+
+  function placeBubble() {
+    // Find nearest grid cell to bubblePos
+    let r = Math.floor(bubblePos.y / rowHeight);
+    let c = Math.floor((bubblePos.x - (r % 2 === 1 ? bubbleRadius : 0)) / (bubbleRadius * 2));
+    if (r < 0) r = 0;
+    if (r >= rows) r = rows - 1;
+    if (c < 0) c = 0;
+    if (c >= cols) c = cols - 1;
+
+    if (!grid[r][c]) {
+      grid[r][c] = currentBubble;
+    } else {
+      // If cell occupied, try to find nearby free cell
+      let placed = false;
+      let directions = [
+        [0,1], [0,-1], [1,0], [-1,0],
+        [1,1], [1,-1], [-1,1], [-1,-1]
+      ];
+      for (let [dr, dc] of directions) {
+        let nr = r + dr;
+        let nc = c + dc;
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && !grid[nr][nc]) {
+          grid[nr][nc] = currentBubble;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        // Place anyway (overwrite) to avoid stuck
+        grid[r][c] = currentBubble;
+      }
+    }
+
+    shooting = false;
+    currentBubble = null;
+    checkMatches();
+    spawnBubble();
+  }
+
+  function checkMatches() {
+    // Find groups of 3 or more connected bubbles of same color to pop
+    let visited = Array(rows).fill(null).map(() => Array(cols).fill(false));
+    let popped = false;
+
+    function dfs(r, c, color, group) {
+      if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+      if (visited[r][c]) return;
+      if (grid[r][c] !== color) return;
+      visited[r][c] = true;
+      group.push([r, c]);
+
+      // Check neighbors (including diagonals)
+      const neighbors = [
+        [r-1, c], [r+1, c], [r, c-1], [r, c+1],
+        [r-1, c-1], [r-1, c+1], [r+1, c-1], [r+1, c+1]
+      ];
+      for (let [nr, nc] of neighbors) {
+        dfs(nr, nc, color, group);
+      }
+    }
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c] && !visited[r][c]) {
+          let group = [];
+          dfs(r, c, grid[r][c], group);
+          if (group.length >= 3) {
+            // pop them
+            for (let [rr, cc] of group) {
+              grid[rr][cc] = null;
+            }
+            score += group.length * 10;
+            popped = true;
+          }
+        }
+      }
+    }
+
+    if (popped) {
+      removeFloatingBubbles();
+    }
+  }
+
+  function removeFloatingBubbles() {
+    // Remove bubbles not connected to top row
+    let visited = Array(rows).fill(null).map(() => Array(cols).fill(false));
+
+    function dfs(r, c) {
+      if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+      if (visited[r][c]) return;
+      if (!grid[r][c]) return;
+      visited[r][c] = true;
+      const neighbors = [
+        [r-1, c], [r+1, c], [r, c-1], [r, c+1],
+        [r-1, c-1], [r-1, c+1], [r+1, c-1], [r+1, c+1]
+      ];
+      for (let [nr, nc] of neighbors) {
+        dfs(nr, nc);
+      }
+    }
+
+    // Start from bubbles in top row
+    for (let c = 0; c < cols; c++) {
+      if (grid[0][c]) {
+        dfs(0, c);
+      }
+    }
+
+    // Remove unvisited bubbles (floating)
+    let removed = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c] && !visited[r][c]) {
+          grid[r][c] = null;
+          removed++;
+        }
+      }
+    }
+    if (removed > 0) {
+      score += removed * 15;
+    }
+  }
+
+  function loseLife() {
+    lives--;
+    if (lives <= 0) {
+      alert('Game Over! Your Score: ' + score);
+      resetGame();
+    }
+  }
+
+  function resetGame() {
+    grid = createGrid();
+    score = 0;
+    lives = 3;
+    level = 1;
+    currentBubble = null;
+    shooting = false;
+    spawnBubble();
+    updateUI();
+  }
+
+  function updateUI() {
+    document.getElementById('score').textContent = 'Score: ' + score;
+    document.getElementById('lives').textContent = 'Lives: ' + lives;
+    document.getElementById('level').textContent = 'Level: ' + level;
+  }
+
+  function handleKeys() {
+    if (keys['ArrowLeft']) paddleX -= 7;
+    if (keys['ArrowRight']) paddleX += 7;
+    paddleX = Math.min(canvas.width - paddleWidth / 2, Math.max(paddleWidth / 2, paddleX));
+
+    if (keys['ArrowUp']) aimingAngle -= 0.04;
+    if (keys['ArrowDown']) aimingAngle += 0.04;
+
+    if (aimingAngle < -Math.PI + 0.1) aimingAngle = -Math.PI + 0.1;
+    if (aimingAngle > -0.1) aimingAngle = -0.1;
+
+    if (keys[' '] && !shooting && currentBubble) {
+      shooting = true;
+      bubblePos.x = paddleX;
+      bubblePos.y = canvas.height - 30 - bubbleRadius;
+      bubbleVel.x = Math.cos(aimingAngle) * shootSpeed;
+      bubbleVel.y = Math.sin(aimingAngle) * shootSpeed;
+    }
+  }
+
+  window.addEventListener('keydown', (e) => {
+    keys[e.key] = true;
+  });
+  window.addEventListener('keyup', (e) => {
+    keys[e.key] = false;
+  });
+
+  function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    handleKeys();
+    drawGrid();
+    drawPaddle();
+    drawAimLine();
+    drawCurrentBubble();
+    moveBubble();
+
+    updateUI();
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  resetGame();
+  gameLoop();
+
+</script>
+
+</body>
+</html>
